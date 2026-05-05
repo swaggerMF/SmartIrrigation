@@ -165,9 +165,10 @@ class IrrigationProvider extends ChangeNotifier {
         ));
     }
 
-    // Evaluate rule-based automation on every sensor update
+    // Evaluate automation on every sensor update
     if (topic.startsWith('smart_irrigation/sensors/')) {
       _runRuleBasedCheck();
+      _runAiCheck();
     }
 
     notifyListeners();
@@ -222,7 +223,19 @@ class IrrigationProvider extends ChangeNotifier {
     return false;
   }
 
-  Future<void> generateAiDecision() async {
+  // Throttle: don't spam the backend — wait at least 30s between AI calls
+  DateTime _lastAiCall = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _runAiCheck() {
+    if (_controlMode != ControlMode.ai) return;
+    if (_isLoadingAi) return;
+    final now = DateTime.now();
+    if (now.difference(_lastAiCall).inSeconds < 30) return;
+    _lastAiCall = now;
+    generateAiDecision(applyAutomatically: true);
+  }
+
+  Future<void> generateAiDecision({bool applyAutomatically = false}) async {
     _isLoadingAi = true;
     _aiDecisionResult = null;
     notifyListeners();
@@ -238,6 +251,7 @@ class IrrigationProvider extends ChangeNotifier {
         type: LogType.aiDecisionGenerated,
         message: 'AI decision: ${_aiDecisionResult!.decision}',
       ));
+      if (applyAutomatically) applyAiDecision();
     } catch (e) {
       _addLog(LogEntry(type: LogType.error, message: 'AI backend error: $e'));
     } finally {

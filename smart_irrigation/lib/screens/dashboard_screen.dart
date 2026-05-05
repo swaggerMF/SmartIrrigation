@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/control_mode.dart';
 import '../providers/irrigation_provider.dart';
 import '../widgets/dashboard_card.dart';
 import '../widgets/status_indicator.dart';

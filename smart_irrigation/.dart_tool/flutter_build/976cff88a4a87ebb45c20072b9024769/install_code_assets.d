@@ -1,0 +1,1 @@
+ /home/vlad/info/IC/SmartIrrigation/smart_irrigation/.dart_tool/flutter_build/976cff88a4a87ebb45c20072b9024769/native_assets.json: 
