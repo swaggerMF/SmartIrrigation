@@ -1,0 +1,58 @@
+@startuml UseCaseDiagram
+!theme plain
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam actorStyle awesome
+skinparam usecaseBorderColor #7F77DD
+skinparam usecaseBackgroundColor #EEEDFE
+skinparam usecaseFontColor #26215C
+skinparam actorBorderColor #0F6E56
+skinparam actorBackgroundColor #E1F5EE
+
+title Smart Irrigation System — Use Case Diagram
+
+left to right direction
+
+actor "Utilizator" as User
+actor "AI Decision Engine" as AI
+actor "ESP32" as ESP
+
+rectangle "Smart Irrigation Application" {
+  usecase "Vizualizare valori senzori" as UC1
+  usecase "Control manual pompă" as UC2
+  usecase "Setare praguri configurabile" as UC3
+  usecase "Schimbare mod operare\n(manual / automat)" as UC4
+  usecase "Vizualizare istoric citiri" as UC5
+  usecase "Primire notificări / alerte" as UC6
+  usecase "Trimitere date senzori via MQTT" as UC7
+  usecase "Recepție comandă pompă" as UC8
+  usecase "Acționare releu pompă" as UC9
+  usecase "Decizie automată irigare" as UC10
+  usecase "Fallback reguli configurate" as UC11
+}
+
+User --> UC1
+User --> UC2
+User --> UC3
+User --> UC4
+User --> UC5
+User --> UC6
+
+ESP --> UC7
+ESP --> UC8
+ESP --> UC9
+
+AI --> UC10
+AI --> UC11
+
+UC10 ..> UC9 : <<include>>
+UC11 ..> UC10 : <<extend>>
+UC2 ..> UC9 : <<include>>
+
+note right of UC11
+  Activat automat când
+  AI Engine nu este disponibil
+end note
+
+@enduml

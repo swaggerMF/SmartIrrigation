@@ -1,0 +1,106 @@
+@startuml SequenceDiagram
+!theme plain
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam sequenceArrowThickness 1.2
+skinparam sequenceBoxBackgroundColor #F1EFE8
+skinparam sequenceBoxBorderColor #B4B2A9
+skinparam sequenceLifeLineBorderColor #888780
+skinparam sequenceParticipantBackgroundColor #FAFAFA
+skinparam sequenceParticipantBorderColor #B4B2A9
+skinparam sequenceGroupBorderColor #B4B2A9
+skinparam sequenceGroupBackgroundColor #F9F8F4
+skinparam noteBackgroundColor #FAEEDA
+skinparam noteBorderColor #EF9F27
+
+title Smart Irrigation — Sequence Diagram\n(Mod Automat: Citire Senzori → Afișare → Decizie AI → Acționare Pompă)
+
+participant "ESP32\n(Hardware)" as ESP #E1F5EE
+participant "MQTT\nBroker" as MQTT #E1F5EE
+participant "SensorManager\n(Flutter)" as SM #E1F5EE
+participant "IrrigationController\n(Flutter)" as IC #E1F5EE
+participant "DecisionEngine\n(AI/Fallback)" as DE #FAECE7
+participant "Dashboard\n(Flutter UI)" as UI #EEEDFE
+participant "NotificationService\n(Flutter)" as NS #FAEEDA
+participant "ReadingRepository\n(Flutter)" as RR #E6F1FB
+
+== 1. Citire și publicare date senzori ==
+
+loop Fiecare 5 secunde
+  ESP -> ESP : readAllSensors()
+  note right of ESP
+    Citește: SoilMoistureSensor,
+    TemperatureSensor, AirHumiditySensor,
+    WaterLevelSensor (opțional)
+  end note
+  ESP -> MQTT : publish("sensors/data", json_payload)
+  MQTT -> SM : onMessage(payload)
+  SM -> SM : parsePayload(payload)\ncreateSnapshot()
+  SM -> RR : saveReading(sensorReading)
+  SM -> UI : notifyReadingUpdate(snapshot)
+  UI -> UI : rebuild() / render charts
+end
+
+== 2. Verificare praguri ==
+
+SM -> SM : checkThresholds(snapshot)
+alt Prag depășit
+  SM -> NS : sendAlert(Alert{type=THRESHOLD_EXCEEDED})
+  NS -> UI : showAlertBanner()
+end
+
+== 3. Decizie automată (mod AUTOMATIC) ==
+
+SM -> IC : onSnapshotReady(snapshot)
+IC -> IC : checkOperationMode()
+alt Mod AUTOMATIC
+  IC -> DE : analyze(snapshot)
+  alt AI disponibil (AIDecisionEngine)
+    DE -> DE : callMLModel(snapshot)
+    DE --> IC : IrrigationDecision{action=START,\nconfidence=0.87,\nsource=AI_MODEL}
+  else AI indisponibil (RuleBasedEngine)
+    DE -> DE : evaluateRules(snapshot)
+    note right of DE
+      Reguli exemplu:
+      soilMoisture < 30% → START
+      waterLevel < 20%   → STOP
+      temperature > 35°C → START
+    end note
+    DE --> IC : IrrigationDecision{action=START,\nsource=RULE_BASED}
+  end
+else Mod MANUAL
+  note over IC : Acțiunea vine direct\nde la utilizator prin UI
+end
+
+== 4. Acționare pompă ==
+
+alt Decision.action == START
+  IC -> MQTT : publish("cmd/pump", "START")
+  MQTT -> ESP : onCommandReceived("START")
+  ESP -> ESP : relay.turnOn()
+  ESP -> MQTT : publish("status/pump", "ON")
+  MQTT -> IC : onMessage("status/pump", "ON")
+  IC -> IC : updatePumpState(ON)
+  IC -> UI : notifyPumpStateChange(ON)
+  IC -> NS : sendPumpNotification(PumpState.ON)
+  NS -> UI : showPushNotification("Pompa pornită")
+end
+
+== 5. Oprire pompă (după durată / condiție) ==
+
+loop Monitorizare continuă
+  IC -> SM : getAllReadings()
+  SM --> IC : SensorSnapshot
+  IC -> DE : analyze(snapshot)
+  DE --> IC : IrrigationDecision{action=STOP}
+  IC -> MQTT : publish("cmd/pump", "STOP")
+  MQTT -> ESP : onCommandReceived("STOP")
+  ESP -> ESP : relay.turnOff()
+  ESP -> MQTT : publish("status/pump", "OFF")
+  MQTT -> IC : onMessage("status/pump", "OFF")
+  IC -> NS : sendPumpNotification(PumpState.OFF)
+  NS -> UI : showPushNotification("Pompa oprită")
+end
+
+@enduml

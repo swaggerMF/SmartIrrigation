@@ -1,0 +1,35 @@
+name: smart_irrigation
+description: Smart Irrigation System - Flutter Application for ESP32-based irrigation control.
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  provider: ^6.1.2
+
+  # MQTT communication
+  mqtt_client: ^10.0.0
+
+  # Local storage for settings and logs
+  shared_preferences: ^2.2.3
+
+  # HTTP client for AI backend requests
+  http: ^1.2.0
+
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

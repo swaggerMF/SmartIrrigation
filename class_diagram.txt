@@ -1,0 +1,437 @@
+@startuml ClassDiagram
+!theme plain
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam classBackgroundColor #FAFAFA
+skinparam classBorderColor #B4B2A9
+skinparam classHeaderBackgroundColor #F1EFE8
+skinparam classAttributeIconSize 0
+skinparam classFontStyle bold
+skinparam packageBorderColor #D3D1C7
+skinparam packageBackgroundColor #F9F8F4
+skinparam arrowColor #5F5E5A
+
+title Smart Irrigation System — Class Diagram
+
+' =========================================================
+' PACKAGE: Flutter UI Layer
+' =========================================================
+package "Flutter UI Layer" #EEEDFE {
+
+  class DashboardScreen <<Widget>> {
+    - sensorCards: List<SensorCard>
+    - pumpControl: PumpControlWidget
+    - currentMode: OperationMode
+    - connectionStatus: ConnectionStatus
+    --
+    + build(ctx: BuildContext): Widget
+    + onModeToggle(mode: OperationMode): void
+    + onPumpAction(action: PumpAction): void
+    + refreshSensorData(): Future<void>
+  }
+
+  class HistoryScreen <<Widget>> {
+    - readings: List<SensorReading>
+    - filterPeriod: DateRange
+    - chartType: ChartType
+    --
+    + build(ctx: BuildContext): Widget
+    + filterByDate(range: DateRange): void
+    + exportData(): void
+    + renderChart(): void
+  }
+
+  class SettingsScreen <<Widget>> {
+    - thresholds: IrrigationThresholds
+    - notifSettings: NotificationSettings
+    - aiEnabled: bool
+    --
+    + build(ctx: BuildContext): Widget
+    + saveThresholds(): Future<void>
+    + toggleAI(enabled: bool): void
+    + configureNotifications(): void
+  }
+
+  class User <<Entity>> {
+    - userId: String
+    - name: String
+    - email: String
+    - preferences: UserPreferences
+    - thresholds: IrrigationThresholds
+    --
+    + updateThresholds(t: IrrigationThresholds): void
+    + setOperationMode(mode: OperationMode): void
+    + getPreferences(): UserPreferences
+  }
+}
+
+' =========================================================
+' PACKAGE: Services Layer (Flutter)
+' =========================================================
+package "Services Layer" #E1F5EE {
+
+  class MQTTService <<Service>> {
+    - client: MqttServerClient
+    - brokerUrl: String
+    - port: int
+    - topics: Map<String, String>
+    - connectionStatus: ConnectionStatus
+    --
+    + connect(): Future<bool>
+    + disconnect(): void
+    + subscribe(topic: String): void
+    + publish(topic: String, payload: String): void
+    + onMessage: Stream<MQTTMessage>
+  }
+
+  class SensorManager <<Service>> {
+    - sensors: Map<String, Sensor>
+    - latestReadings: Map<String, double>
+    - updateInterval: Duration
+    - alertThresholds: IrrigationThresholds
+    --
+    + registerSensor(s: Sensor): void
+    + getReading(sensorId: String): double
+    + getAllReadings(): SensorSnapshot
+    + checkThresholds(): List<Alert>
+    + onReadingUpdate: Stream<SensorSnapshot>
+  }
+
+  class IrrigationController <<Service>> {
+    - pumpState: PumpState
+    - operationMode: OperationMode
+    - lastActivation: DateTime
+    - mqttService: MQTTService
+    --
+    + startPump(): Future<bool>
+    + stopPump(): Future<bool>
+    + setMode(mode: OperationMode): void
+    + getStatus(): PumpStatus
+    + onStateChange: Stream<PumpState>
+    + runAutoDecisionCycle(): Future<void>
+  }
+
+  class NotificationService <<Service>> {
+    - pendingAlerts: Queue<Alert>
+    - settings: NotificationSettings
+    - history: List<Alert>
+    --
+    + sendAlert(alert: Alert): void
+    + sendPumpNotification(state: PumpState): void
+    + clearAlerts(): void
+    + getHistory(): List<Alert>
+  }
+
+  class ReadingRepository <<Repository>> {
+    - db: LocalDatabase
+    - cacheSize: int
+    - retentionDays: int
+    --
+    + saveReading(r: SensorReading): Future<void>
+    + getReadings(range: DateRange): Future<List<SensorReading>>
+    + getLatest(n: int): List<SensorReading>
+    + purgeOld(): Future<void>
+    + exportCSV(): String
+  }
+}
+
+' =========================================================
+' PACKAGE: AI / Decision Engine
+' =========================================================
+package "AI / Decision Engine" #FAECE7 {
+
+  abstract class DecisionEngine <<Abstract>> {
+    # isAvailable: bool
+    # lastDecision: IrrigationDecision
+    # confidence: double
+    --
+    + {abstract} analyze(snapshot: SensorSnapshot): IrrigationDecision
+    + {abstract} isReady(): bool
+    + getExplanation(): String
+  }
+
+  class AIDecisionEngine <<Service>> {
+    - modelEndpoint: String
+    - apiKey: String
+    - modelVersion: String
+    - requestTimeout: Duration
+    --
+    + analyze(snapshot: SensorSnapshot): IrrigationDecision
+    + trainOnHistory(data: List<SensorReading>): void
+    + updateModel(): Future<void>
+    + checkAvailability(): Future<bool>
+  }
+
+  class RuleBasedEngine <<Fallback>> {
+    - rules: List<IrrigationRule>
+    - thresholds: IrrigationThresholds
+    --
+    + analyze(snapshot: SensorSnapshot): IrrigationDecision
+    + addRule(rule: IrrigationRule): void
+    + evaluateRules(data: SensorSnapshot): bool
+    + isReady(): bool
+  }
+
+  class IrrigationRule <<ValueObject>> {
+    - ruleId: String
+    - description: String
+    - condition: RuleCondition
+    - action: PumpAction
+    - priority: int
+    --
+    + evaluate(snapshot: SensorSnapshot): bool
+    + getAction(): PumpAction
+  }
+
+  class IrrigationThresholds <<ValueObject>> {
+    + soilMoistureMin: double
+    + soilMoistureMax: double
+    + temperatureMax: double
+    + airHumidityMin: double
+    + waterLevelMin: double
+    --
+    + isSoilDry(value: double): bool
+    + isTemperatureHigh(value: double): bool
+    + isWaterSufficient(value: double): bool
+    + toJson(): Map<String, dynamic>
+    + fromJson(map: Map): IrrigationThresholds
+  }
+
+  class IrrigationDecision <<ValueObject>> {
+    + action: PumpAction
+    + confidence: double
+    + reasoning: String
+    + generatedAt: DateTime
+    + source: DecisionSource
+    --
+    + shouldStartPump(): bool
+    + toJson(): Map<String, dynamic>
+  }
+}
+
+' =========================================================
+' PACKAGE: Domain Models
+' =========================================================
+package "Domain Models" #E6F1FB {
+
+  abstract class Sensor <<Abstract>> {
+    # sensorId: String
+    # name: String
+    # unit: String
+    # isOnline: bool
+    # lastValue: double
+    # lastUpdated: DateTime
+    --
+    + {abstract} getValue(): double
+    + isHealthy(): bool
+    + toJson(): Map<String, dynamic>
+  }
+
+  class SoilMoistureSensor <<Hardware>> {
+    - calibrationFactor: double
+    - rawPin: int
+    --
+    + getValue(): double
+    + calibrate(): void
+    + getMoisturePercent(): double
+  }
+
+  class TemperatureSensor <<Hardware>> {
+    - protocol: SensorProtocol
+    - resolution: int
+    --
+    + getValue(): double
+    + getTemperatureCelsius(): double
+  }
+
+  class AirHumiditySensor <<Hardware>> {
+    - dhtType: DHTType
+    --
+    + getValue(): double
+    + getHumidityPercent(): double
+  }
+
+  class WaterLevelSensor <<Hardware>> {
+    - minLevel: double
+    - maxLevel: double
+    --
+    + getValue(): double
+    + getLevelPercent(): double
+    + isLow(): bool
+  }
+
+  class SensorReading <<Entity>> {
+    - readingId: String
+    - sensorId: String
+    - sensorType: SensorType
+    - value: double
+    - unit: String
+    - timestamp: DateTime
+    --
+    + toJson(): Map<String, dynamic>
+    + fromJson(map: Map): SensorReading
+    + isValid(): bool
+  }
+
+  class SensorSnapshot <<ValueObject>> {
+    - soilMoisture: double
+    - temperature: double
+    - airHumidity: double
+    - waterLevel: double?
+    - capturedAt: DateTime
+    --
+    + toJson(): Map<String, dynamic>
+    + fromReadings(readings: Map): SensorSnapshot
+    + isComplete(): bool
+  }
+
+  class Alert <<Entity>> {
+    - alertId: String
+    - type: AlertType
+    - severity: AlertSeverity
+    - message: String
+    - timestamp: DateTime
+    - sensorId: String?
+    - isAcknowledged: bool
+    --
+    + acknowledge(): void
+    + toNotification(): LocalNotification
+    + isActive(): bool
+  }
+}
+
+' =========================================================
+' PACKAGE: Hardware Layer (ESP32 — C++ / Arduino)
+' =========================================================
+package "Hardware Layer (ESP32)" #F1EFE8 {
+
+  class ESP32Controller <<Hardware>> {
+    - wifiSSID: String
+    - wifiPassword: String
+    - mqttBroker: String
+    - mqttPort: int
+    - sensorPins: Map<String, int>
+    - relayPin: int
+    - publishInterval: int
+    --
+    + setupWifi(): void
+    + setupMQTT(): void
+    + readAllSensors(): SensorPayload
+    + publishReadings(): void
+    + onCommandReceived(cmd: String): void
+    + reconnectMQTT(): void
+  }
+
+  class RelayModule <<Hardware>> {
+    - pin: int
+    - currentState: bool
+    - activeHigh: bool
+    - lastToggle: unsigned long
+    --
+    + turnOn(): void
+    + turnOff(): void
+    + getState(): bool
+    + toggle(): void
+    + isSafeToToggle(): bool
+  }
+
+  class IrrigationPump <<Hardware>> {
+    - isRunning: bool
+    - totalRunTimeMs: unsigned long
+    - maxContinuousRunMs: unsigned long
+    --
+    + start(): void
+    + stop(): void
+    + getRunTimeMs(): unsigned long
+    + isOperational(): bool
+    + emergencyStop(): void
+  }
+}
+
+' =========================================================
+' ENUM TYPES
+' =========================================================
+package "Enum Types" #FAEEDA {
+  enum OperationMode {
+    MANUAL
+    AUTOMATIC
+  }
+  enum PumpState {
+    ON
+    OFF
+    ERROR
+  }
+  enum PumpAction {
+    START
+    STOP
+    NO_ACTION
+  }
+  enum AlertSeverity {
+    LOW
+    MEDIUM
+    HIGH
+    CRITICAL
+  }
+  enum DecisionSource {
+    AI_MODEL
+    RULE_BASED
+    MANUAL_USER
+  }
+}
+
+' =========================================================
+' RELATIONSHIPS
+' =========================================================
+
+' Inheritance
+AIDecisionEngine --|> DecisionEngine
+RuleBasedEngine --|> DecisionEngine
+SoilMoistureSensor --|> Sensor
+TemperatureSensor --|> Sensor
+AirHumiditySensor --|> Sensor
+WaterLevelSensor --|> Sensor
+
+' Composition
+DashboardScreen *-- SensorManager : uses >
+DashboardScreen *-- IrrigationController : controls >
+ESP32Controller *-- RelayModule : contains >
+RelayModule *-- IrrigationPump : controls >
+
+' Aggregation
+SensorManager o-- Sensor : manages >
+ReadingRepository o-- SensorReading : stores >
+NotificationService o-- Alert : manages >
+
+' Associations
+IrrigationController --> MQTTService : publishes commands via >
+MQTTService --> ESP32Controller : communicates via Wi-Fi/MQTT >
+SensorManager --> ReadingRepository : persists readings >
+SensorManager --> NotificationService : triggers alerts >
+IrrigationController --> DecisionEngine : delegates auto-decision >
+IrrigationController --> NotificationService : sends pump state >
+DashboardScreen --> HistoryScreen : navigates >
+DashboardScreen --> SettingsScreen : navigates >
+User --> IrrigationThresholds : configures >
+RuleBasedEngine --> IrrigationThresholds : uses >
+RuleBasedEngine --> IrrigationRule : evaluates >
+IrrigationDecision --> DecisionSource : has >
+
+note bottom of MQTTService
+  Protocol: Wi-Fi + MQTT over TCP
+  Topics:
+   sensors/data — ESP32 → App
+   cmd/pump     — App → ESP32
+   status/pump  — ESP32 → App
+end note
+
+note bottom of DecisionEngine
+  Strategie de decizie:
+  1. Se încearcă AIDecisionEngine
+  2. Dacă isAvailable() = false
+     → se folosește RuleBasedEngine
+  3. În mod manual, decizia aparține
+     exclusiv utilizatorului
+end note
+
+@enduml
